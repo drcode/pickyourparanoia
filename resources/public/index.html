@@ -1,0 +1,709 @@
+<html>
+  <head>
+    <meta name="viewport" content="user-scalable=0"/>
+    <script src="https://cdn.jsdelivr.net/npm/scittle@0.6.15/dist/scittle.js" type="application/javascript"></script>
+    <script crossorigin src="https://unpkg.com/react@17/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/scittle@0.6.15/dist/scittle.reagent.js" type="application/javascript"></script>
+    <script src="gif.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Itim&display=swap" rel="stylesheet">
+    <style>.palette:hover{background-color:rgb(130,130,150)}</style>
+  </head>
+  <body style="margin:0;padding:0;overflow-x:hidden;background-color:rgb(80,80,100)">
+    <div id="app"></div>
+  </body>
+  <script>
+    const bufferWidth=400;
+    const bufferHeight=400;
+    const canvasWidth=500;
+    const canvasHeight=500;
+    const imageCache = new Map();
+    async function cachedImage(src){
+      let image = imageCache.get(src);
+      if (!image) {
+        image = await loadImage(src);
+        imageCache.set(src, image);
+      }
+      return image;
+    }
+    async function drawCached(src, destCtx, destX, destY, destWidth, destHeight) {
+      // Retrieve the image from the cache or load it if not present
+      let image=await cachedImage(src);
+      // Draw the image on the destination context
+      destCtx.drawImage(image, destX, destY, destWidth, destHeight);
+    }
+    function loadImage(src) {
+      return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.src = src;
+        image.onload = () => resolve(image);
+        image.onerror = (error) => reject(error);
+      });
+    }
+    async function cacheImages(imageSources) {
+      // Load all images in parallel and wait for them to complete
+      await Promise.all(imageSources.map(async (src) => {
+        if (!imageCache.has(src)) {
+          const image = await loadImage(src);
+          imageCache.set(src, image);
+        }
+      }));
+    }
+    function drawTextInRect(ctx, text, rect,cursorPos) {
+      let fontSize = 100; // Start from a high value
+      let textHeight;
+      let lines;
+      var cursorLoc=null;
+      do {
+        ctx.font = fontSize + 'px Itim';            
+
+        lines = wrapText(ctx, text, rect.width);
+        textHeight = lines.length * fontSize;
+
+        fontSize--; // Reduce font size gradually
+      } while (textHeight > rect.height || !doesEveryLineFit(ctx, lines, rect.width));
+
+      ctx.textAlign = 'center';
+      lines.forEach((line, i) => {
+        if(!cursorLoc && cursorPos<=line.length){
+          let cursorOffset=ctx.measureText(line.substr(0, cursorPos)).width;
+          let lineWidth=ctx.measureText(line).width;
+          cursorLoc={x:rect.x + rect.width / 2-lineWidth/2+cursorOffset, y:rect.y + i * fontSize + fontSize};
+        }
+        else {
+          cursorPos-=line.length+1;
+        }
+        ctx.fillText(line, rect.x + rect.width / 2, rect.y + i * fontSize + fontSize);
+      });
+      return cursorLoc;
+    }
+
+    function wrapText(ctx, text, maxWidth) {
+      const words = text.split(' ');
+      let lines = [];
+      let currentLine = words[0];
+
+      for (let i = 1; i < words.length; i++) {
+        let word = words[i];
+        let width = ctx.measureText(currentLine + ' ' + word).width;
+        if (width < maxWidth) {
+          currentLine += ' ' + word;
+        } else {
+          lines.push(currentLine);
+          currentLine = word;
+        }
+      }
+      lines.push(currentLine);
+
+      return lines;
+    }
+
+    function doesEveryLineFit(ctx, lines, maxWidth) {
+      return lines.every(line => ctx.measureText(line).width <= maxWidth);
+    }
+    var canvasTextArea=null;
+    var bubbleText=null;
+    function drawBubble(canvas){
+      drawTextInRect(canvas.getContext('2d'),bubbleText,{x:270,y:25,width:205,height:150});
+    }
+    class CanvasTextArea {
+      constructor(canvas) {
+        if(bubbleText==null)
+          bubbleText="";
+        this.hiddenTextarea = document.getElementById('hidden-textarea');
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d');
+        this.cursorPos = 0;
+        this.fontSize = 20;
+        this.fontFamily = "'Itim', cursive";
+        this.init();
+      }
+
+      init() {
+        this.input=this.inputHandler.bind(this);
+        this.hiddenTextarea.addEventListener('input', this.input);
+        this.keydown=this.keydownHandler.bind(this);
+        this.hiddenTextarea.addEventListener('keydown', this.keydown);
+        this.canvas.tabIndex = 1000;  // make canvas focusable
+      }
+
+      destroy() {
+        this.hiddenTextarea.removeEventListener('input', this.input);
+        this.hiddenTextarea.removeEventListener('keydown', this.keydown);
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+      }
+
+      draw() {
+        //this.ctx.fillText(bubbleText, 10, this.fontSize);
+        const {x,y}=drawTextInRect(this.ctx,bubbleText,{x:270,y:25,width:205,height:150},this.cursorPos);
+
+        if (!canvasTextArea)
+          return;
+        // Draw the cursor
+        this.ctx.lineWidth=4;
+        this.ctx.strokeStyle="orange"
+        this.ctx.beginPath();
+        this.ctx.moveTo(x, y);
+        this.ctx.lineTo(x, y-this.fontSize);
+        this.ctx.stroke();
+      }
+
+      inputHandler(event) {
+    let newCharacter = event.data;  // get the newly input character
+
+    if (newCharacter) {  // Printable character
+        bubbleText = bubbleText.slice(0, this.cursorPos) + newCharacter + bubbleText.slice(this.cursorPos);
+        this.cursorPos++;
+    }
+
+    this.hiddenTextarea.value = '';  // clear the textarea
+    event.preventDefault();
+}
+      
+      keydownHandler(event) {
+        if (event.ctrlKey && event.key === 'r') {
+          return; // Do not prevent default behaviour for ctrl-r
+        }
+        if (event.key === 'Enter') {
+          canvasTextArea.destroy();
+          canvasTextArea=null;
+          return;
+        }
+        if (event.key.length === 1) {  // Printable character
+          return;
+        } else if (event.key === 'Backspace') {
+          bubbleText = bubbleText.slice(0, this.cursorPos - 1) + bubbleText.slice(this.cursorPos);
+          this.cursorPos = Math.max(this.cursorPos - 1, 0);
+        } else if (event.key === 'ArrowLeft') {
+          this.cursorPos = Math.max(this.cursorPos - 1, 0);
+        } else if (event.key === 'ArrowRight') {
+          this.cursorPos = Math.min(this.cursorPos + 1, bubbleText.length);
+        }
+
+        event.preventDefault();  // Prevent scrolling
+      }
+
+    }
+    function lockText(){
+      if (canvasTextArea){
+        canvasTextArea.destroy;
+        canvasTextArea=null;
+      }
+    }
+    function drawAffine(srcCanvas,dstCanvas,tl,tr,bl,flip) {
+      var dstTopLeftPoint=tl;
+      var dstTopRightPoint=tr;
+      var dstBottomLeftPoint=bl;
+      if(flip){
+        dstTopLeftPoint=tr;
+        dstTopRightPoint=tl;
+        dstBottomLeftPoint={x:tr.x+bl.x-tl.x,y:tr.y+bl.y-tl.y};
+      }
+      const srcContext = srcCanvas.getContext('2d');
+      const dstContext = dstCanvas.getContext('2d');
+      const srcWidth = srcCanvas.width;
+      const srcHeight = srcCanvas.height;
+      const tx = (dstTopRightPoint.x - dstTopLeftPoint.x) / srcWidth;
+      const ty = (dstTopRightPoint.y - dstTopLeftPoint.y) / srcWidth;
+      const sx = (dstBottomLeftPoint.x - dstTopLeftPoint.x) / srcHeight;
+      const sy = (dstBottomLeftPoint.y - dstTopLeftPoint.y) / srcHeight;
+      dstContext.setTransform(tx, ty, sx, sy, dstTopLeftPoint.x, dstTopLeftPoint.y);
+      dstContext.globalAlpha=1;
+      dstContext.drawImage(srcCanvas, 0, 0, srcWidth, srcHeight, 0, 0, srcWidth, srcHeight);
+      dstContext.setTransform(1, 0, 0, 1, 0, 0);
+      dstContext.globalAlpha=1;
+    }
+    var lisp=false;
+    async function drawFrame(img,img2,domCanvas,frame,rendering){
+      if(useCustomImage){
+        img=document.getElementById("customImage");
+        img2=null;
+      }
+      const numFrames=40;
+      let canvas=document.createElement('canvas');
+      let tempCanvas = document.createElement('canvas');
+      let tempCtx = tempCanvas.getContext('2d',{willReadFrequently:true});
+      tempCanvas.width = bufferWidth;
+      tempCanvas.height = bufferHeight;
+      let tempCanvas2=tempCanvas;
+      let tempCtx2=tempCtx;
+      if(img2){
+        tempCanvas2 = document.createElement('canvas');
+        tempCtx2 = tempCanvas2.getContext('2d',{willReadFrequently:true});
+        tempCanvas2.width = bufferWidth;
+        tempCanvas2.height = bufferHeight;
+      }
+      var flameOffset=10;
+      if(fireName=="guns.png" || fireName=="5g.png" || fireName=="shoggoth.png"){
+        flameOffset=5;
+      }
+      canvas.width = 500;
+      canvas.height = 500;
+      tempCtx.drawImage(img,flameOffset*2,0,bufferWidth-flameOffset*4,bufferHeight);
+      if(img2){
+        tempCtx2.drawImage(img2,flameOffset*2,0,bufferWidth-flameOffset*4,bufferHeight);
+      }
+      const xOffBottom=flameOffset*Math.sin(bufferHeight/20+(frame*2*Math.PI/numFrames));
+      {
+        let imgData=tempCtx.getImageData(0,0,bufferWidth,bufferHeight);
+        let data=imgData.data;
+        for(let y=0;y<bufferHeight-1;y++){
+          const frac=Math.sin(y/20+(frame*2*Math.PI/numFrames))
+          let srcIdx = Math.floor(((y+1)*bufferWidth-xOffBottom+flameOffset*frac))*4;
+          let dstIdx = y*bufferWidth*4;
+          for(let xx=0;xx<bufferWidth;xx++){
+            data[dstIdx++]=data[srcIdx++];
+            data[dstIdx++]=data[srcIdx++];
+            data[dstIdx++]=data[srcIdx++];
+            data[dstIdx++]=data[srcIdx++];
+          }
+        }
+        tempCtx.putImageData(imgData,0,0);
+      }
+      if(img2)
+      {
+        let imgData=tempCtx2.getImageData(0,0,bufferWidth,bufferHeight);
+        let data=imgData.data;
+        for(let y=0;y<bufferHeight-1;y++){
+          const frac=Math.sin(y/20+(frame*2*Math.PI/numFrames))
+          let srcIdx = Math.floor(((y+1)*bufferWidth-xOffBottom+flameOffset*frac))*4;
+          let dstIdx = y*bufferWidth*4;
+          for(let xx=0;xx<bufferWidth;xx++){
+            data[dstIdx++]=data[srcIdx++];
+            data[dstIdx++]=data[srcIdx++];
+            data[dstIdx++]=data[srcIdx++];
+            data[dstIdx++]=data[srcIdx++];
+          }
+        }
+        tempCtx2.putImageData(imgData,0,0);
+      }
+      const ctx = canvas.getContext('2d',{willReadFrequently:true});
+      ctx.fillStyle="rgb(180,180,150)";
+      ctx.fillRect(0,0,canvasWidth,canvasHeight);
+      async function draw(s){
+        await drawCached(s,ctx,0,0,500,500);
+      }
+      loc=[
+        {ul:{x:50, y:116}, ur:{x:200,y:116},bl:{x:50,y:363},flip:false,src:tempCanvas},
+        {ul:{x:280, y:146}, ur:{x:540,y:146},bl:{x:280,y:390},flip:true,src:tempCanvas},
+        {ul:{x:-155, y:225}, ur:{x:145,y:150},bl:{x:-155,y:525},flip:false,src:tempCanvas},
+        {ul:{x:65, y:325}, ur:{x:235,y:315},bl:{x:65,y:485},flip:true,src:tempCanvas},
+        {ul:{x:290, y:320}, ur:{x:700,y:320},bl:{x:290,y:550},flip:false,src:tempCanvas}
+      ]
+      if(img2){
+        loc[1].flip=false;
+        loc[1].src=tempCanvas2;
+        loc[3].flip=false;
+        loc[3].src=tempCanvas2;
+      }
+      if(fireName=="shoggoth.png"){
+        loc[1].ul.y+=40;
+        loc[1].ul.x+=30;
+        loc[1].bl.y+=20;
+        loc[1].bl.x+=30;
+        loc[1].flip=true;
+        loc[2].src=tempCanvas2;
+        loc[3].bl.y+=10;
+        loc[3].ur.x+=10;
+        loc[3].flip=true;
+        loc[3].src=tempCanvas;
+        loc[4].ul.x-=60;
+        loc[4].ur.x-=60;
+        loc[4].bl.x-=60;
+      }
+      if(fireName=="glacier2.png"){
+        loc[1].ul.y+=40;
+        loc[1].ur.y+=40;
+        loc[1].bl.y+=40;
+        loc[1].flip=true;
+        loc[2].flip=true;
+        loc[2].ul.x+=30;
+        loc[2].ul.y+=30;
+        loc[2].ur.x+=30;
+        loc[2].ur.y+=30;
+        loc[2].bl.x+=30;
+        loc[2].bl.y+=30;
+        loc[3].ul.x+=30;
+        loc[3].ul.y+=30;
+        loc[3].ur.x+=30;
+        loc[3].ur.y+=30;
+        loc[3].bl.x+=30;
+        loc[3].bl.y+=30;
+        loc[4].ul.x-=70;
+        loc[4].ur.x-=90;
+        loc[4].bl.x-=70;
+      }
+      if(fireName=="covid.png"){
+        loc[4].ul.x-=70;
+        loc[4].ur.x-=90;
+        loc[4].bl.x-=70;
+      }
+      if(fireName=="guns.png" || fireName=="5g.png" || fireName=="parentheses.png"){
+        for(let i=0;i<loc.length;i++){
+          loc[i].ul.x-=40;
+          loc[i].ul.y-=40;
+          loc[i].ur.x+=40;
+          loc[i].ur.y-=40;
+          loc[i].bl.x-=40;
+          loc[i].bl.y+=40;
+        }
+        loc[2].ul.x+=40;
+        loc[2].ur.x+=40;
+        loc[2].bl.x+=40;
+        loc[4].ul.x-=50;
+        loc[4].ur.x-=50;
+        loc[4].bl.x-=50;
+      }
+      if(fireName=="5g.png"){
+        loc[3].ul.x+=40;
+        loc[3].ul.y-=40;
+        loc[3].ur.x+=40;
+        loc[3].ur.y-=40;
+        loc[3].bl.x+=40;
+        loc[3].bl.y-=40;
+      }
+      if(fireName=="bitcoin.png"){
+        loc[4].ul.x-=90;
+        loc[4].ur.x-=90;
+        loc[4].bl.x-=90;
+      }
+      if(fireName=="straws.png"){
+        loc[1].ul.y+=30;
+        loc[1].ur.y+=30;
+        loc[1].bl.y+=30;
+      }
+      if(fireName=="hair2.png"){
+        loc[0].src=tempCanvas2;
+        loc[1].flip=true;
+        loc[2].ul.x+=30;
+        loc[2].ur.x+=30;
+        loc[2].bl.x+=30;
+        loc[3].ul.x+=20;
+        loc[3].ur.x+=50;
+        loc[3].bl.x+=20;
+        loc[3].bl.y+=10;
+        loc[4].ul.x-=70;
+        loc[4].ur.x-=70;
+        loc[4].bl.x-=70;
+        loc[4].ul.y+=20;
+        loc[4].ur.y+=20;
+        loc[4].bl.y+=20;
+        loc[4].flip=true;
+      }
+      if(fireName=="effects.png"){
+        loc[4].ul.x-=100;
+        loc[4].ur.x-=100;
+        loc[4].bl.x-=100;
+      }
+      if(fireName=="spagetti.png"){
+        loc[3].flip=false;
+        loc[3].ul.x+=40;
+        loc[3].ul.y+=20;
+        loc[3].ur.x+=40;
+        loc[3].ur.y+=20;
+        loc[3].bl.x+=40;
+        loc[3].bl.y+=20;
+      }
+      function drawFire(n){
+        let{ul,ur,bl,flip,src}=loc[n];
+        drawAffine(src,canvas,ul,ur,bl,flip);
+      }
+      await draw("back.png");
+      //ctx.drawImage(tempCanvas, 0, 0, bufferWidth, bufferHeight);
+      drawFire(0);
+      await draw("door.png");
+      drawFire(1);
+      //ctx.fillStyle="red";
+      //ctx.fillRect(150,100,250,300);
+      await draw("chair.png");
+      dogframes=["0","1","2","0","1","2","0","1","2","0","1","2","_blink0","_blink1","_blink0","0","1","2","0","1","2","0","1","2","0","1","2","0","1","_foot0","_foot1","_foot0","1","2","0","1","2","0","1","2"];
+      if (lisp){
+        await draw("lisp.png");
+      }
+      else {
+        await draw("dog"+dogframes[frame%40]+".png");
+      }
+      drawFire(2);
+      drawFire(3);
+      drawFire(4);
+      await draw("smoke"+Math.floor((frame%20)/2)+".png");
+      if(bubbleText!=null)
+        await draw("empty_bubble.png");
+      else
+        await draw("bubble.png");
+      if(rendering)
+        await draw("url.png");
+      const domCtx = domCanvas.getContext('2d');
+      const imageData = ctx.getImageData(0, 0, 500,500);
+      domCtx.putImageData(imageData, 0, 0);
+      if(canvasTextArea && !rendering){
+        canvasTextArea.draw();
+      }
+      else if(bubbleText!=null){
+        drawBubble(domCanvas);
+      }
+    }
+    async function makeGif() {
+      const element=document.getElementById("makeGifButton");
+      element.style.backgroundColor="red";
+      lockText();
+      const gif=new GIF({workers:4,quality:10,dither:"FloydSteinberg"});
+        const image=await cachedImage(fireName);
+        var image2=null;
+        if (fire2Name){
+          image2=await cachedImage(fire2Name);
+        }
+      for(let n=0;n<40;n++){
+        const canvas=document.createElement("canvas");
+        canvas.width=500;
+        canvas.height=500;
+        await drawFrame(image,image2,canvas,n,true);
+        gif.addFrame(canvas,{delay:100});
+      }
+      gif.on('finished', function(blob) {
+        element.style.backgroundColor="rgb(80,170,80)";
+       /*
+        window.open(URL.createObjectURL(blob));*/
+        let url = URL.createObjectURL(blob);
+        let downloadLink = document.createElement('a');
+        downloadLink.href = url;
+        downloadLink.download = 'PickYourParanoia.gif';
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+        URL.revokeObjectURL(url);
+      });
+      gif.render();
+    }
+    let frameNum=0;
+    var fireName="shoggoth.png";
+    var fire2Name="shoggoth2.png";
+    async function animate(){
+      const frameRate=10;
+      setInterval(async function(){
+        const image=await cachedImage(fireName);
+        var image2=null;
+        if (fire2Name){
+          image2=await cachedImage(fire2Name);
+        }
+        await drawFrame(image,image2,document.getElementById("canvas"),frameNum,false)
+        frameNum=frameNum+1;
+      },
+                  1000/frameRate);
+    }
+    function edit(){
+      const canvas=document.getElementById("canvas");
+      canvasTextArea = new CanvasTextArea(canvas);
+      document.getElementById("hidden-textarea").focus();  // Focus the canvas to start editing
+    }
+    var useCustomImage=false;
+    function customImage(){
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        document.getElementById("customImage").src = e.target.result;
+        useCustomImage=true;
+      }
+        reader.readAsDataURL(document.getElementById("customFire").files[0]);
+    }
+  </script>
+  <script type="application/x-scittle">
+    (require '[reagent.core :as r]
+           '[reagent.dom :as rdom])
+
+    (def fires [{:img :shoggoth
+                 :img2 :shoggoth2
+                 :desc "AI Shoggoth"}
+                {:img :glacier2
+                 :img2 :glacier
+                 :desc "Melting Glaciers"}
+                {:img :avocado
+                 :desc "Avocado Toast"}
+                {:img :covid
+                 :desc "COVID"}
+                {:img :trump
+                 :desc "Trump"}
+                {:img :biden
+                 :desc "Biden"}
+                {:img :musk
+                 :desc "Elon Musk"}
+                {:img :altman
+                 :desc "Sam Altman"}
+                {:img :loan
+                 :img2 :loan2
+                 :desc "Student Loans"}
+                {:img :guns
+                 :desc "Guns"}
+                {:img :5g
+                 :desc "5G Towers"}
+                {:img :bitcoin
+                 :desc "Crashing Bitcoin"}
+                {:img :straws
+                 :desc "Soggy Paper Straws"}
+                {:img :fire
+                 :desc "Fire"}
+                {:img :alien
+                 :desc "Lisp..."}])
+
+    (def fires-lisp [{:img :parentheses
+                      :desc "Parentheses"}
+                     {:img :hair2
+                      :img2 :hair
+                      :desc "Hair"}
+                     {:img :effects
+                      :img2 :effects2
+                      :desc "Side Effects"}
+                     {:img :spagetti
+                      :desc "Spagetti Code"}])
+
+    (def state (r/atom {:landscape (> js/window.innerWidth js/window.innerHeight)
+                        :lisp      false
+                        :gif-loading false}))
+
+    (defn on-window-resize []
+     (swap! state assoc :landscape (> js/window.innerWidth js/window.innerHeight)))
+
+    (defn palette [style]
+     (for [fire (if (:lisp @state)
+                 fires-lisp
+                 fires)]
+      [:div.palette {:style (merge style {:display "flex"
+                                          :flex-direction "column"
+                                          :padding "1.3rem"})
+                     :onClick (fn []
+                               (js/lockText)
+                               (if (= (:img fire) :alien)
+                                (do (swap! state assoc :lisp true)
+                                 (set! (.-lisp js/window) true))
+                                (do (set! (.-fireName js/window) (str (name (:img fire)) ".png"))
+                                 (set! (.-fire2Name js/window) (when (:img2 fire)
+                                                                (str (name (:img2 fire)) ".png"))))))}
+       [:div {:style {:flex-grow 1
+                      :background-image (str "url(" (name (:img fire)) ".png)")
+                      :background-position "bottom"
+                      :background-repeat "no-repeat"
+                      :background-size "contain"}}]
+       [:div {:style {:text-align "center"}}
+        [:span {:style {:font-size "1.3rem" :background-color "black" :color "white" :padding "0.5rem"}}
+         (:desc fire)]]]))
+
+    (defn canvas [style]
+     [:canvas {:width 500
+               :height 500
+               :id "canvas"
+               :style style}])
+
+    (defn desc []
+     [:div {:style {:padding "0.5rem"
+                     :margin "1rem"
+                     :font-size "1rem"
+                     :font-family "'Itim', cursive"
+                     :background-color "rgb(40,40,50)"
+                     :text-align "center"
+                     :color "white"}}
+       "Another pointless website created by Conrad Barski, because everyone in 2023 is paranoid. "
+       [:a {:href "https://twitter.com/lisperati"} "@lisperati on Twitter"]
+       [:br]
+       "Based on the artwork by "
+      [:a {:href "https://kcgreendotcom.com/index.html"} "KC Green"]
+       ". This is a noncommercial site, "
+      [:a {:href "https://github.com/drcode/pickyourparanoia"} "source code available here"]
+      "."])
+
+
+    
+    (defn tools [style show-desc]
+     [:div {:style style}
+      [:div {:style {:display "flex"
+                                 :justify-content "space-evenly"
+                                 :padding-top "1rem"}}
+      [:button {:id "makeGifButton"
+                :onClick js/makeGif
+                :style {:font-size "2rem" :padding "0.5rem" :font-family "'Itim', cursive"
+                        :color "black"
+                        :background-color "rgb(80,170,80)"}}
+         "CREATE PERFECTLY"
+         [:br]
+       "LOOPING GIF"]
+      [:div {:style {:font-size "2rem"
+                     :padding "0.5rem"
+                     :font-family "'Itim', cursive"
+                     :display "flex"
+                     :background-color "silver"
+                     :flex-direction  "column"
+                     :align-items "center"}}
+       "CUSTOM"
+       [:br]
+       "FIRE PNG"
+       [:br]
+       [:div {:style {:background-color "silver"}}
+       [:input {:id "customFire"
+                :type "file"
+               :accept "image/png"
+               :onChange js/customImage
+               }
+        ]]]
+      
+      [:button {:onClick js/edit
+                :style {:font-size "2rem" :padding "0.5rem" :font-family "'Itim', cursive"}}
+       "CUSTOM"
+       [:br]
+       "BUBBLE TEXT"]]
+      (when show-desc
+       (desc))
+     ])
+
+    (defn custom-image []
+     [:img {:id "customImage"
+            :style{:display "none"}}])
+    
+    (defn my-component []
+     (if (:landscape @state)
+      [:div
+       [:textarea {:id "hidden-textarea"
+                   :style {:opacity 0
+                           :position "absolute"
+                           :pointer-events "none"}}]
+       [:div#mainPanel {:style {:position "absolute" :width "calc(100vh * 0.8)" :height "100vh"}}
+        (custom-image)
+        (canvas {:position "absolute" :width "100%" :height "calc(100% * 0.8)"})
+        (tools {:position "absolute" :top "calc(100% * 0.8)" :width "100%"} true)
+       ]
+       [:div#palette {:style {:position "absolute" :left "calc(100vh * 0.8)" :width "calc(100% - 100vh * 0.8)" :height "100%"}}
+        [:div {:style {:font-size "3rem"
+                       :font-family "'Itim', cursive"
+                       :padding "1rem"
+                       :padding-bottom "0rem"
+                       :color "white"}
+               :align "center"}
+         "PICK YOUR PARANOIA:"]
+        [:div {:style {:display "grid" :grid-template-columns "1fr 1fr 1fr" :grid-template-rows "repeat(5, 1fr)" :width "100%" :height "90%"}}
+         (palette {})]]]
+      [:div
+       [:textarea {:id "hidden-textarea"
+                   :style {:opacity 0
+                           :position "absolute"
+                           :pointer-events "none"}}]
+       (canvas { :width "100%" :height "100vw"})
+       (tools {:width "100%"} false)
+        [:div {:style {:font-size "3rem"
+                       :font-family "'Itim', cursive"
+                       :padding "1rem"
+                       :padding-bottom "0rem"
+                       :color "white"}
+               :align "center"}
+         "PICK YOUR PARANOIA:"]
+#_              (custom-image)
+
+       [:div {:style {:display "flex"                                     :justify-content "space-evenly"
+                      :flex-wrap "wrap" :width "100%"}}
+        (palette {:width "25vw"
+                  :height "36vw"})]
+              (desc)]))
+    
+    (rdom/render [my-component] (.getElementById js/document "app"))
+    (js/addEventListener "resize" on-window-resize)
+    (js/animate)
+  </script>
+</html>

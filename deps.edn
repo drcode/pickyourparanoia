@@ -1,0 +1,9 @@
+{:deps    {io.github.drcode/fbc-utils {:git/tag "v0.0.4"
+                                       :sha     "2a8ffc8fd74af62d3d179dfd65159f1a32499acc"}
+           io.github.drcode/snek      {:git/tag "v0.0.5"
+                                       :sha     "bf7adbce6529f948b4d64e6279d975a8bc523663"}
+           io.github.drcode/nrepl-gpt {:git/tag "v1"
+                                       :sha     "d2cafd5a3d93ceb090fb0a30df4d10797f628157"}
+           org.babashka/http-server   {:mvn/version "0.1.11"}}
+ :aliases {:cider-clj {:extra-deps {cider/cider-nrepl {:mvn/version "0.27.2"}}
+                       :main-opts  ["-m" "nrepl.cmdline" "--middleware" "[cider.nrepl/cider-middleware,nrepl-gpt.nrepl-gpt/wrap-nrepl-gpt]"]}}}

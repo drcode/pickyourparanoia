@@ -1,0 +1,52 @@
+<html>
+  <header>
+    <script src="gif.js"></script>
+    
+    <script>
+      function doit(){
+var gif = new GIF({
+  workers: 2,
+  quality: 10
+});
+
+  gif.addFrame(document.getElementById("canvas"));
+
+gif.on('finished', function(blob) {
+  window.open(URL.createObjectURL(blob));
+});
+
+        gif.render();
+      }
+</script>
+</header>
+<body>
+  fooof
+  <button onClick="doit()">doit</button>
+  <canvas id="canvas"></canvas>
+</body>
+</html>
+
+
+<!--
+Avocado Toast
+The AI Shoggoth
+Trump's Head
+Biden's Head
+Sam Altman's Head
+Elon Musk's Head
+Student loans
+5G tower
+crashing bitcoin
+COVID
+impossible burger
+soggy paper straws
+murder hornets
+guns
+overfilled inbox
+drone birds
+lisp alien
+- parentheses
+- hair
+- side effects
+- spagetti code
+>
